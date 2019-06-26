@@ -1,0 +1,23 @@
+{
+  "name": "showlist-updater",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Brian Chan",
+  "license": "MIT",
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "cheerio": "^1.0.0-rc.3",
+    "compression": "^1.7.4",
+    "cron": "^1.7.1",
+    "express": "^4.17.1",
+    "method-override": "^3.0.0",
+    "mongoose": "^5.6.1",
+    "pug": "^2.0.4",
+    "q": "^1.5.1",
+    "request": "^2.88.0",
+    "spotify-web-api-node": "^4.0.0"
+  },
+  "devDependencies": {}
+}
