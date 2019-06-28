@@ -2,7 +2,7 @@ var mongoose = require('mongoose');
 var artist = require('./artist');
 var Schema = mongoose.Schema;
 
-var ArtistSchema = Schema({
+var ArtistSchema = new Schema({
 	name: String,
 	spotifyArtistId: String,
 	track: Object,

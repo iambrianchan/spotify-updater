@@ -120,7 +120,7 @@ var scrape = function() {
 	};
 }();
 
-new CronJob('20 01 00 * * *', 
+new CronJob('00 00 00 * * *', 
 	function() {
 		var start = new Date().getTime();
 		console.log("Updating the database...");
