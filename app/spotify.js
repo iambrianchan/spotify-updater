@@ -1,12 +1,11 @@
-var env = require("../env.json").development;
 var SpotifyWebApi = require("spotify-web-api-node");
 var artistsSchema = require('./models/artist');
 var playlistsSchema = require('./models/playlist');
 
 var spotifyApi = new SpotifyWebApi({
-  clientId: env.CLIENT_ID,
-  clientSecret: env.CLIENT_SECRET,
-  redirectUri: "http://spotify.fakebrianchan.com/callback"
+  clientId: process.env.SPOTIFY_CLIENT_ID,
+  clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+  redirectUri: process.env.SPOTIFY_REDIRECT_URI
 });
 
 var defaultDelay = 2000;
