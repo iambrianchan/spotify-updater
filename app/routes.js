@@ -72,7 +72,7 @@ new CronJob('00 00 00 * * *',
 // 	});
 // }
 
-myAsync();
+// myAsync();
 
 module.exports = function(app) {
     app.get('*', function(req, res) {
