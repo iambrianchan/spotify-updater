@@ -1,4 +1,4 @@
-var env = require("../env.json").production;
+var env = require("../env.json").development;
 var SpotifyWebApi = require("spotify-web-api-node");
 var artistsSchema = require('./models/artist');
 var playlistsSchema = require('./models/playlist');
@@ -46,7 +46,9 @@ spot.transformCity = async function(city) {
 		let venues = Object.keys(city.venues);
 		for (let i = 0; i < venues.length; i++) {
 			let newVenueArtists = await spot.transformVenues(city.venues[venues[i]]);
+			console.log('finished',venues[i]);
 			await delay(defaultDelay);
+			await spot.authenticate();
 			transformedVenue = {
 				name: venues[i],
 				artists: newVenueArtists
@@ -60,9 +62,7 @@ spot.transformCity = async function(city) {
 // Iterate over all of the artists in a Venue
 spot.transformVenues = async function(venue) {
 	return new Promise(async function(resolve, reject) {
-		let artists = Object.keys(venue.artists);
-		// artists = ["JDKFJAKOJFDJKdnksldnlfka"];
-		// artists = ["Wilco", "The Rolling Stones", "Sublime", "The National"];
+		let artists = venue;
 		// Iterate over artist names, first searching for the artist by name in DB
 		for (let i = 0; i < artists.length; i++) {
 			let artistInDb = await lookupArtistInMongo(artists[i]);
@@ -76,7 +76,9 @@ spot.transformVenues = async function(venue) {
 				if (newArtist != null) {
 					let newTrack = await spot.searchTopTrack(newArtist.spotifyArtistId);
 					newArtist.track = newTrack;
-					await saveArtistInMongo(newArtist);
+					if (newTrack != null) {
+						await saveArtistInMongo(newArtist);
+					}
 					await delay(defaultDelay);
 				}
 				artists[i] = newArtist;
@@ -85,7 +87,7 @@ spot.transformVenues = async function(venue) {
 
 		// filter any null values
 		filtered = artists.filter(function(artist) {
-			return artist != null;
+			return artist != null && artist.track != null;
 		});
 		resolve(filtered);
 	});
