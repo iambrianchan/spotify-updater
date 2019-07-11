@@ -1,356 +1,315 @@
-"use strict";
 
-var request = require("request");
-var cheerio = require("cheerio");
-var Q = require("q");
-const http = require('https');
 
-var scraper = {};
-scraper.main = async function(cityName) {
-	if (cityName == 'ATX') {
-		return await scraper.runAtxScrape();
-	}
-	else if (cityName == 'SFO') {
-		return await scraper.runSfScrape();
-	}
-	else if (cityName == 'NYC') {
-		let html = await getNycHtml();
-		let data = parseNycJson(html);
-		return data;
-	}
+const cheerio = require('cheerio');
+const https = require('https');
+const http = require('http');
+
+const scraper = {};
+
+// parse each NYC concert object
+function parseNycConcert(city, concert) {
+  const newCity = city;
+  const venueName = concert.venue.name;
+  const artists = concert.cached_bands.map(band => band.name);
+
+  // if the venue does not exist create the key in the city.venues object
+  if (!(venueName in newCity.venues)) {
+    newCity.venues[venueName] = [];
+  }
+  // map all artist names into venue;
+  artists.forEach((artist) => {
+    newCity.venues[venueName].push(artist);
+  });
+  return newCity;
 }
 
-// parse the json
+// parse the NYC json, then call forEach to parse each concert object
 function parseNycJson(data) {
-	let city = {
-		name: 'New York City',
-		venues: {},
+  const city = {
+    name: 'New York City',
+    venues: {},
+  };
 
-	};
+  const jsonData = JSON.parse(data);
 
-	data = JSON.parse(data);
+  jsonData.forEach((item) => {
+    parseNycConcert(city, item);
+  });
 
-	data.forEach((item) => {
-		parseNycConcert(city, item);
-	});
+  return city;
+}
 
-	return city;
+// get the NYC html
+async function getNycHtml() {
+  const header = {
+    authorization: 'Token token="3b35f8a73dabd5f14b1cac167a14c1f6"',
+  };
+  const options = {
+    hostname: 'www.ohmyrockness.com',
+    path: '/api/shows.json?index=true&regioned=1',
+    port: 443,
+    method: 'GET',
+    headers: header,
+  };
+
+  return new Promise(((resolve, reject) => {
+    const request = https.request(options, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', async () => {
+        resolve(data);
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.end();
+  }))
+    .catch((error) => { console.log(error); });
+}
+
+// Get the Html from Showlist Austin
+async function getAtxHTML() {
+  const options = {
+    hostname: 'www.showlistaustin.com',
+    path: '/',
+    port: 80,
+    method: 'GET',
+  };
+
+  return new Promise(((resolve, reject) => {
+    const request = http.request(options, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', async () => {
+        resolve(data);
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.end();
+  }))
+    .catch((error) => { console.log(error); });
+}
+
+ // clean up the listing (event), and return an array of artists/bands
+function cleanAtxListing(listing) {
+  let cleanListing = listing.trim();
+  const lastThree = cleanListing.slice(-3);
+  const lastSeven = cleanListing.slice(-7);
+
+  if (lastThree === ' at') {
+    cleanListing = cleanListing.slice(0, -3);
+  } else if (lastSeven === ' at the') {
+    cleanListing = cleanListing.slice(0, -7);
+  }
+
+  // remove anything inside parentheses, to remove settimes, band origin etc.
+  cleanListing = cleanListing.split(/\(.*?\)/).join('').split(' , ').join(', ')
+    .split(/\, | \/ /);
+
+  // return an array of artists
+  if (cleanListing[0].substr(0, 7).indexOf('with') !== -1) {
+    cleanListing[0] = cleanListing[0].substr(5);
+  }
+  for (let i = 0; i < cleanListing.length; i += 1) {
+    cleanListing[i] = cleanListing[i].replace('&', 'and');
+    cleanListing[i] = cleanListing[i].toLowerCase();
+    if (cleanListing[i] === '') {
+      cleanListing.splice(i, 1);
+      i -= 1;
+    }
+  }
+  return cleanListing;
+}
+
+// parse out each event from a date with list of events
+function parseAtxDateForShows(html, city, events) {
+  const $ = html;
+  // pick out hr (event start/stop markers), a tags and text
+  const contents = $(events).contents().filter(function pickOutContents() {
+    return (this.name === 'hr' || (this.name === 'a' && (this.attribs.title !== 'list by venue' && this.attribs.title !== 'map')) || (this.type === 'text' && this.data.length > 3 && this.data.charAt(this.data.length - 1) !== '['));
+  });
+
+  for (let i = 0; i < contents.length; i += 1) {
+    if (contents.get(i).tagName === 'hr') {
+      let venueName; let
+        listing;
+      let artists = [];
+
+      // go through all proceeding items. hr tag will mark the end, a tag will mark venue name, text will be artists
+      for (let k = i + 1; k < contents.length; k += 1) {
+        // this block means we have got to the end of a single concert. artists in listing will be added to venue.
+        if (contents.get(k).tagName === 'hr') {
+          if (city.venues[venueName] === undefined) {
+            city.venues[venueName] = [];
+            city.venues[venueName] = artists;
+          } else if (listing) {
+            for (const artistName of listing) {
+              city.venues[venueName].push(artistName);
+            }
+          }
+
+          artists = [];
+          break;
+        } else if (contents.get(k).tagName === 'a') { // extract venue name
+          venueName = contents.eq(k).text();
+        } else { // clean up the the listing to be an array of artist names
+          listing = contents.eq(k).text();
+          listing = cleanAtxListing(listing);
+        }
+      }
+    }
+  }
+}
+
+// parse the Austin html
+function parseAtxHtml(html) {
+
+  const $ = cheerio.load(html);
+  const events = $('td.h4');
+  const city = {
+    name: 'Austin',
+    venues: {},
+  };
+
+  // Get a list of days with events and then parse each day
+  events.each((index, date) => {
+    parseAtxDateForShows($, city, date);
+  });
+  return city;
+}
+
+// run the scrape for Austin
+scraper.runAtxScrape = async function runAtxScrape() {
+  return new Promise((async (resolve, reject) => {
+    const atxHtml = await getAtxHTML();
+    const city = parseAtxHtml(atxHtml);
+    resolve(city);
+  }));
 };
 
-function parseNycConcert(city, concert) {
-	let venueName = concert.venue.name;
-	let date = concert.starts_at;
-	let artists = concert.cached_bands.map((band) => {
-		return band.name;
-	});
+// get the html for each page for San Francisco
+async function getSfHtml(pageNumber) {
+  const options = {
+    hostname: 'www.foopee.com',
+    path: `/punk/the-list/by-club.${pageNumber}.html`,
+    port: 80,
+    method: 'GET',
+  };
 
-	// if the venue does not exist create the key in the city.venues object
-	if (!(venueName in city.venues)) {
-		city.venues[venueName] = [];	
-	}
-	// map all artist names into venue;
-	artists.forEach((artist) => {
-		city.venues[venueName].push(artist);
-	});
-	return city;
+  return new Promise(((resolve, reject) => {
+    const request = http.request(options, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        resolve(data);
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.end();
+  }))
+    .catch((error) => { console.log(error); });
 }
 
-async function getNycHtml () {
-	let header = {
-			authorization: 'Token token="3b35f8a73dabd5f14b1cac167a14c1f6"'
-		};
-	const options = {
-		hostname: 'www.ohmyrockness.com',
-		path: '/api/shows.json?index=true&regioned=1',
-		port: 443,
-		method: 'GET',
-		headers: header
-	};
+// Get all pages of San Francisco shows
+async function getAllSfHtml() {
+  const pages = [0, 1, 2, 3];
 
-	return new Promise(function(resolve, reject) {
-		let request = http.request(options, (response) => {
-			let data = '';
-
-			response.on('data', (chunk) => {
-				data += chunk;
-			});
-
-			response.on('end', async () => {
-				resolve(data);
-			});
-		});
-
-		request.on('error', (error) => {
-			console.log(error);
-			resolve(error)
-		});
-
-		request.end();
-	});
+  return Promise.all(pages.map(pageNumber => getSfHtml(pageNumber)));
 }
 
-
-
-
-
-
-// scraper.getHTML = async function () {
-	// const options = {
-	// 	hostname: "showlistaustin.com",
-	// 	path: "/",
-	// 	port: 80,
-	// 	method: 'GET'
-	// };
-
-// 	const req = http.request(options, (response) => {
-// 		let data = '';
-
-// 		response.on('data', (chunk) => {
-// 			data += chunk;
-// 		});
-
-// 		response.on('end', () => {
-// 			console.log(data);
-// 		});
-// 	});
-
-// 	req.on('error', (error) => {
-// 		// console.error(error);
-// 	})
-
-// 	req.end();
-// }
-
-
-// // bay area
-// scraper.getHTML = async function () {
-
-// 	let pages = [0, 1, 2, 3];
-
-// 	return await Promise.all(pages.map(page => {
-// 		let options = {
-// 			hostname: 'www.foopee.com',
-// 			path: '/punk/the-list/by-club.' + page + '.html',
-// 			method: "GET"
-// 		};
-// 		const req = http.request(options, (response) => {
-// 			let data = '';
-
-// 			response.on('data', (chunk) => {
-// 				data += chunk;
-// 			});
-
-// 			response.on('end', () => {
-// 				console.log(data);
-// 				return data;
-// 			});
-// 		});
-
-// 		req.on('error', (error) => {
-// 			console.error(error);
-// 		});
-
-// 		req.end();
-
-// 	})
-
-// 	);
-
-
-// }
-
-// Austin scrape
-function getAtxHTML(callback) {
-	var options = {
-		url: "http://showlistaustin.com"
-	};
-	request(options, function scrape(error, response, body) {
-		if (!error && response.statusCode == 200) {
-			callback(body);
-		}
-	});		
-}
-
-function parseAtxHtml(html) {
-	var $ = cheerio.load(html);
-	var dates = $("h4 b");
-	var events = $("td.h4");
-	let city = {
-		name: 'Austin',
-		venues: {}
-	};
-	events.each(function(index, date) {
-		parseAtxHTMLForArtists(city, date);
-	});
-	return city;
-
-	function parseAtxHTMLForArtists(city, events) {
-		// pick out hr (event start/stop markers), a tags and text
-		let contents = $(events).contents().filter(function() {
-			return (this.name === 'hr' || (this.name === 'a' && (this.attribs.title != 'list by venue' && this.attribs.title != 'map')) || (this.type === 'text' && this.data.length > 3 && this.data.charAt(this.data.length - 1) != '['));
-		});
-
-		for (let i = 0; i < contents.length; i++) {
-			if (contents.get(i).tagName === 'hr') {
-				let venueName, listing;
-				let artists = [];
-
-				// go through all proceeding items. hr tag will mark the end, a tag will mark venue name, text will be artists
-				for (let k = i + 1; k < contents.length; k++) {
-					// this block means we have got to the end of a single concert. artists in listing will be added to venue.
-					if (contents.get(k).tagName === 'hr') {
-						if (city.venues[venueName] == undefined) {
-							city.venues[venueName] = [];
-							city.venues[venueName] = artists;
-						}
-						else {
-							if (listing) {
-								listing.forEach(function(artistName) {
-									city.venues[venueName].push(artistName);
-								});
-							}
-						}
-
-						artists = [];
-						break;
-					}
-					// extract venue name
-					else if (contents.get(k).tagName === 'a') {
-						venueName = contents.eq(k).text();
-					}
-					// clean up the the listing to be an array of artist names
-					else {
-						listing = contents.eq(k).text();
-						listing = cleanUpListing(listing);
-					}
-				}
-			}
-		}
-	}
-
-	// 	// clean up the listing, and return an array of artists/bands
-	function cleanUpListing(listing) {
-		listing = listing.trim();
-		var lastThree = listing.slice(-3);
-		var lastSeven = listing.slice(-7);
-
-		if (lastThree === ' at') {
-			listing = listing.slice(0, -3);
-		}
-		else if (lastSeven === ' at the'){
-			listing = listing.slice(0, -7);
-		}
-
-		// remove anything inside parentheses, to remove settimes, band origin etc.
-		listing = listing.split(/\(.*?\)/).join('').split(' , ').join(', ').split(/\, | \/ /);;
-
-		// return an array of artists
-		if (listing[0].substr(0, 7).indexOf("with") != -1) {
-			listing[0] = listing[0].substr(5);
-		}
-		for (let i = 0; i < listing.length; i++) {
-			listing[i] = listing[i].replace("&", "and");
-			listing[i] = listing[i].toLowerCase();
-			if (listing[i] == '') {
-				listing.splice(i, 1);
-				i--;
-			}
-		}
-		return listing
-	}
-}
-
-scraper.runAtxScrape = async function () {
-	return new Promise(function(resolve, reject) {
-		getAtxHTML(function parse(html) {
-			let city = parseAtxHtml(html);
-			resolve(city);
-		});
-	})
-}
-
-
-// San francisco scrape
-function getAllSfHtml() {
-	var pages = [0, 1, 2, 3];
-	
-	return Q.all(pages.map(function(pageNum) {
-		return Q.fcall(function() {
-			return getHtml(pageNum);
-		})
-	}));
-
-	function getHtml(pageNumber) {
-		var deferred = Q.defer();
-		var options = {
-			method: "GET",
-			url: "http://www.foopee.com/punk/the-list/by-club." + pageNumber + ".html"
-		}
-
-		request(options, function callback(error, response, body) {
-			if (!error && response.statusCode == 200) {
-				deferred.resolve(body);
-			}
-			else {
-				console.log(error);
-			}
-		});
-
-		return deferred.promise;
-	}
-}
-
+// create object with keys of venue name, and values an array of artist names
 function parseSfHtml(html) {
-	var $ = cheerio.load(html);
+  const $ = cheerio.load(html);
+  const data = {};
 
-	var ul = $("body").children("ul");
+  const ul = $('body').children('ul');
+  const li = ul.children();
 
-	var li = ul.children();
-	var data = {};
-	for (let i = 0; i < li.length; i++) {
-		var venue = li.eq(i).children().first().text();
-		data[venue] = [];
-		var shows = li.eq(i).children("ul").children("li");
-		for (let j = 0; j < shows.length; j++) {
-			var date = shows.eq(j).children("b").text();
-			var artists = shows.eq(j).children("a");
-			for (let k = 0; k < artists.length; k++) {
-				var artist = artists.eq(k).text();
-				artist = artist.split(/\W\(.+/).join('');
-				if (artist.indexOf(")") == -1) {
-					artist = artist.replace("&", "and").toLowerCase();
-					if (artist != "") {
-						data[venue].push(artist);
-					}
-				}
-			}
-		}
-	}
-	return data;
+  for (let i = 0; i < li.length; i += 1) {
+    const venue = li.eq(i).children().first().text();
+    data[venue] = [];
+    const shows = li.eq(i).children('ul').children('li');
+    for (let j = 0; j < shows.length; j += 1) {
+      const artists = shows.eq(j).children('a');
+      for (let k = 0; k < artists.length; k += 1) {
+        let artist = artists.eq(k).text();
+        artist = artist.split(/\W\(.+/).join('');
+        if (artist.indexOf(')') === -1) {
+          artist = artist.replace('&', 'and').toLowerCase();
+          if (artist !== '') {
+            data[venue].push(artist);
+          }
+        }
+      }
+    }
+  }
+  return data;
 }
 
-scraper.runSfScrape = function () {
-	let city = {
-		name: 'San Francisco',
-		venues: []
-	};
+// Run the scrape for San Francisco
+scraper.runSfScrape = function runSfScrape() {
+  const city = {
+    name: 'San Francisco',
+    venues: {},
+  };
 
-	return new Promise(function(resolve, reject) {
-		getAllSfHtml()
-		.then(function(result) {
-			var data = {};
-			for (let i = 0; i < result.length; i++) {
-				var page = parseSfHtml(result[i]);
-				var venues = Object.keys(page);
-				for (let i = 0; i < venues.length; i++) {
-					data[venues[i]] = page[venues[i]];
-				}
-			}
-			city.venues = data;
-			resolve(city);
-		})
-	});
-}
+  return new Promise((async (resolve, reject) => {
+    const result = await getAllSfHtml();
+    const data = {};
+    for (const page of result) {
+      const parsedPage = parseSfHtml(page);
+      const venues = Object.keys(parsedPage);
+      for (const venue of venues) {
+        const cleanVenue = venue.split(',')[0];
+        if (!(cleanVenue in data)) {
+          data[cleanVenue] = parsedPage[venue];
+          continue;
+        }
+        let current = data[cleanVenue];
+        current = current.concat(parsedPage[venue]);
+        data[cleanVenue] = current;
+      }
+    }
+    city.venues = data;
+    resolve(city);
+  }));
+};
 
+// Main function handles all cities
+scraper.main = async function scrapeCity(cityName) {
+  if (cityName === 'ATX') {
+    return scraper.runAtxScrape();
+  }
+  if (cityName === 'SFO') {
+    return scraper.runSfScrape();
+  }
+
+  const html = await getNycHtml();
+  const data = parseNycJson(html);
+  return data;
+};
 
 exports.scraper = scraper;

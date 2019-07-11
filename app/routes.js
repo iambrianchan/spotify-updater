@@ -1,81 +1,64 @@
-"use strict";
-var CronJob = require('cron').CronJob;
+
+const cron = require('cron');
 
 // import scraper, spotify api
-var scraper = require('./scraper');
-var spot = require("./spotify");
+const scraper = require('./scraper');
+const spot = require('./spotify');
 
-// use the imported scraper from ./scraper.
-var scrape = function() {
+// handle a city
+async function getScrapedArtists(location) {
+  return new Promise((async (resolve, reject) => {
+    try {
+      if (location === 'ATX') {
+        const austin = await scraper.scraper.main('ATX');
+        resolve(austin);
+      } else if (location === 'SFO') {
+        const sanfrancisco = await scraper.scraper.main('SFO');
+        resolve(sanfrancisco);
+      } else if (location === 'NYC') {
+        const newyorkcity = await scraper.scraper.main('NYC');
+        resolve(newyorkcity);
+      }
+    } catch (error) {
+      reject(Error('An error occurred'));
+    }
+  }));
+}
 
-	async function getScrapedArtists (location, access_token) {
+// return all city data scrapped
+async function automateScrapes() {
+  const cities = ['ATX', 'SFO', 'NYC'];
+  return Promise.all(cities.map(async city => getScrapedArtists(city)));
+}
 
-		return new Promise(async function(resolve, reject) {
-			if (location == 'ATX') {
-				let austin = await scraper.scraper.main('ATX');
-				resolve(austin);
-			}
-			else if (location == 'SFO') {
-				let sanfrancisco = await scraper.scraper.main('SFO');
-				resolve(sanfrancisco);
-			}
-			else if (location == 'NYC') {
-				let newyorkcity = await scraper.scraper.main('NYC');
-				resolve(newyorkcity);
-			}
-		});
-	};
+// Scrape and update database
+async function updateArtistsAndPlaylists() {
+  const start = new Date();
+  console.log('Updating the database...');
 
-	async function automateScrapes() {
-		let cities = ['ATX', 'SFO', 'NYC'];
-		return Promise.all(cities.map(async (city) => {
-			return getScrapedArtists(city);
-		}));
-	};
-
-	return {
-		automateScrapes : automateScrapes
-	};
-}();
-
-new CronJob('00 00 00 * * *', 
-	function() {
-		var start = new Date().getTime();
-		console.log("Updating the database...");
-
-		scrape.automateScrapes()
-		.then((cities) => {
-			return spot.transformCities(cities);
-		})
-		.then((result) => {
-			var end = new Date().getTime();
-			console.log("Update finished. Time elapsed:", (end - start) / 1000);
-		});
-	},
-	null, 
-	true, 
-	'Europe/London'
-);
-
-// Run the scraper adhoc
-// async function myAsync() {
-// 	let start = new Date().getTime();
-// 	console.log("Updating the database...");
-
-// 	scrape.automateScrapes()
-// 	.then((cities) => {
-// 		return spot.transformCities(cities);
-// 	})
-// 	.then((result) => {
-// 		var end = new Date().getTime();
-// 		console.log("Update finished. Time elapsed:", (end - start) / 1000);
-// 	});
-// }
-
-// myAsync();
-
-module.exports = function(app) {
-    app.get('*', function(req, res) {
-    	console.log("The server is meant to run a cron job");
+  automateScrapes()
+    .then(cities => spot.transformCities(cities))
+    .then(() => {
+      const end = new Date();
+      console.log(end);
+      console.log('Update finished. Time elapsed:', (end.getTime() - start.getTime()) / 1000);
     });
+}
+
+// Run once a day
+new cron.CronJob('00 00 00 * * *',
+  (() => {
+    updateArtistsAndPlaylists();
+  }),
+  null,
+  true,
+  'Europe/London');
+
+// run the update adhoc
+// updateArtistsAndPlaylists();
+
+module.exports = function (app) {
+  app.get('*', (req, res) => {
+    console.log('The server is meant to run a cron job');
+  });
 };

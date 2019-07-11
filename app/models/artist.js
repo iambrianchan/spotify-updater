@@ -1,15 +1,16 @@
-var mongoose = require('mongoose');
-var Schema = mongoose.Schema;
+const mongoose = require('mongoose');
 
-var ArtistSchema = new Schema({
-	name: String,
-	spotifyArtistId: String,
-	track: Object,
-	images: [],
-	popularity: Number,
-	genres: [],
-	followers: Number
+const Schema = mongoose.Schema;
+
+const ArtistSchema = new Schema({
+  name: String,
+  spotifyArtistId: String,
+  track: Object,
+  images: [],
+  popularity: Number,
+  genres: [],
+  followers: Number,
 
 });
-
-module.exports = mongoose.model('Artists', ArtistSchema);
+exports.Schema = ArtistSchema;
+exports.Artist = mongoose.model('Artists', ArtistSchema);
