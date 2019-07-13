@@ -6,6 +6,7 @@ const Schema = mongoose.Schema;
 const VenueSchema = new Schema({
   name: String,
   artists: [artistSchema],
+  spotifyPlaylistId: String,
 });
 
 const PlaylistSchema = new Schema({
