@@ -6,9 +6,13 @@ const PlaylistsSchema = require('./models/playlist');
 const spotifyApi = new SpotifyWebApi({
   clientId: process.env.SPOTIFY_CLIENT_ID,
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-  redirectUri: process.env.SPOTIFY_REDIRECT_URI,
+  // redirectUri: process.env.SPOTIFY_REDIRECT_URI,
 });
 
+spotifyApi.setAccessToken(process.env.SPOTIFY_ACCESS_TOKEN);
+spotifyApi.setRefreshToken(process.env.SPOTIFY_REFRESH_TOKEN);
+
+const minimumNumberOfArtists = 5;
 const defaultDelay = 500;
 const spot = {};
 
@@ -47,6 +51,18 @@ async function updatePlaylistInMongo(city) {
   }));
 }
 
+async function getAllPlaylistsFromMongo() {
+  return new Promise(((resolve, reject) => {
+    PlaylistsSchema.find({}, (error, data) => {
+      if (error) {
+        console.log('An error occurred finding all playlists from the database', error);
+        reject(error);
+      }
+      resolve(data);
+    })
+  }))
+}
+
 // Save an artist to database
 async function saveArtistInMongo(artist) {
   return new Promise(((resolve, reject) => {
@@ -63,9 +79,9 @@ async function saveArtistInMongo(artist) {
 
 // Get an access token for spotifyApi
 spot.authenticate = async function authenticate() {
-  return spotifyApi.clientCredentialsGrant().then(
+  return spotifyApi.refreshAccessToken().then(
     (data) => {
-      spotifyApi.setAccessToken(data.body.access_token);
+      spotifyApi.setAccessToken(data.body['access_token']);
     },
     (error) => {
       console.log('Something went wrong when retrieving an access token', error);
@@ -73,11 +89,22 @@ spot.authenticate = async function authenticate() {
   );
 };
 
+function findExistingSpotifyPlaylistId(listOfVenues, venueName, cityName) {
+  for (const existingVenue of listOfVenues) {
+    if (existingVenue.name === venueName + ", " + cityName) {
+      return existingVenue.id;
+    }
+  }
+  return null;
+}
+
 // Iterate over the cities
 spot.transformCities = async function transformCities(cities) {
   await spot.authenticate();
+  const currentUser = await spot.getCurrentUser(spotifyApi);
+  const currentPlaylists = await spot.getAllCurrentUserPlaylists(spotifyApi, currentUser);
   return Promise.all(cities.map(async (city) => {
-    const cityVenues = await spot.transformCity(city);
+    const cityVenues = await spot.transformCity(city, currentPlaylists, currentUser);
     const transformedCity = {
       name: city.name,
       venues: cityVenues,
@@ -89,21 +116,42 @@ spot.transformCities = async function transformCities(cities) {
 };
 
 // Iterate over all of the venues in a city
-spot.transformCity = async function transformCity(city) {
+spot.transformCity = async function transformCity(city, currentPlaylists, currentUser) {
   return new Promise((async (resolve, reject) => {
-    const venues = Object.keys(city.venues);
+    let venues = Object.keys(city.venues);
+
     /* eslint-disable no-await-in-loop */
+    // loop through all all venues
+    // find spotify playlist id if it exists
+    // lookup all artists in the venue
     for (const index of venues.keys()) {
-      const newVenueArtists = await spot.transformVenues(city.venues[venues[index]]);
-      console.log('finished', venues[index]);
+      const currentVenueName = venues[index];
+      const spotifyPlaylistId = findExistingSpotifyPlaylistId(currentPlaylists, currentVenueName, city.name);
+      const newVenueArtists = await spot.transformVenues(city.venues[currentVenueName]);
+      console.log('finished', venues[index], 'with', newVenueArtists.length, 'artists');
       await delay(defaultDelay);
-      await spot.authenticate();
-      const transformedVenue = {
+
+      let transformedVenue = {
         name: venues[index],
         artists: newVenueArtists,
       };
+
+      if (spotifyPlaylistId === null && transformedVenue.artists.length > minimumNumberOfArtists) {
+        transformedVenue = await spot.createUserPlaylist(spotifyApi, currentUser, transformedVenue, city.name)
+      } else if (spotifyPlaylistId !== null && transformedVenue.artists.length > minimumNumberOfArtists) {
+        transformedVenue.spotifyPlaylistId = spotifyPlaylistId;
+      } else {
+        continue;
+      }
+
+      await spot.replaceAllTracksInPlaylist(spotifyApi, currentUser, transformedVenue);
       venues[index] = transformedVenue;
     }
+    
+    // filter venues that did not have more than 5 artists
+    venues = venues.filter(venue => {
+      return typeof venue === 'object';
+    });
     /* eslint-enable no-await-in-loop */
     resolve(venues);
   }));
@@ -112,7 +160,7 @@ spot.transformCity = async function transformCity(city) {
 // Iterate over all of the artists in a Venue
 spot.transformVenues = async function transformVenues(venue) {
   return new Promise((async (resolve, reject) => {
-    const artists = venue;
+    const artists = Array.from(new Set(venue));
     // Iterate over artist names, first searching for the artist by name in DB
     /* eslint-disable no-await-in-loop */
     for (const index of artists.keys()) {
@@ -191,6 +239,84 @@ spot.searchArtist = async function searchArtist(artistName) {
       });
   }))
     .catch((error) => { console.log(error); });
+};
+
+// Get the current user id.
+spot.getCurrentUser = async function(spotifyApi) {
+  return new Promise(function(resolve, reject) {
+    spotifyApi.getMe()
+      .then(function(data) {
+        resolve(data.body.id);
+      }, function(error) {
+        console.log(error);
+        reject(Error('An error occurred getting the current user.'));
+      });
+  })
+    .catch((error) => { console.log(error); });
+};
+
+// Get the current user's playlists.
+spot.getAllCurrentUserPlaylists = async function(spotifyApi, userId) {
+  let offset = 0;
+  let stop = false;
+  let playlists = [];
+  while (!stop) {
+    const retrieved = await new Promise(function(resolve, reject) {
+    spotifyApi.getUserPlaylists(userId, {offset: offset, limit: 50})
+      .then(function(data) {
+        resolve(data.body.items);
+      }, function(error) {
+        console.log(error);
+        resolve(Error('An error occurred getting the current user\'s playlists.'));
+      });
+    });
+
+    playlists = playlists.concat(retrieved);
+    offset += 50;
+    if (retrieved.length == 0) {
+      stop = true;
+    }
+  }
+
+  console.log('found:', playlists.length, 'associated with', userId);
+  return playlists;
+};
+
+// Create a playlist on the current user's account
+spot.createUserPlaylist = async function(spotifyApi, userId, playlist, location) {
+  return new Promise(function(resolve, reject) {
+    let playlistName = playlist.name + ", " + location;
+    
+    spotifyApi.createPlaylist(userId, playlistName, {'public': true})
+      .then(function(data) {
+        playlist.spotifyPlaylistId = data.body.id;
+        resolve(playlist);
+      }, function(error) {
+        resolve(Error('An error occurred creating a user playlist.'));
+      });
+  });
+};
+
+// Replace all tracks in a playlist with ones supplied in playlist array.
+spot.replaceAllTracksInPlaylist = async function(spotifyApi, userId, playlist) {
+  return new Promise(function(resolve, reject) {
+    let tracks = playlist.artists.map(function(artist) {
+      return artist.track.trackUri;
+    });
+    if (tracks.length > 100) {
+      tracks = tracks.slice(0, 100);
+    }
+    // console.log(playlist, playlist.name);
+    if (playlist.spotifyPlaylistId) {
+      spotifyApi.replaceTracksInPlaylist(playlist.spotifyPlaylistId, tracks)
+        .then(function(data) {
+          resolve('Successfully replaced tracks in playlist.');
+        }, function(error) {
+          console.log(error);
+          resolve(Error('An error occured replacing tracks in an existing user playlist.'));
+        });
+    }
+  });
 };
 
 module.exports = spot;

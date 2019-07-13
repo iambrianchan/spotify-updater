@@ -28,6 +28,9 @@ async function getScrapedArtists(location) {
 // return all city data scrapped
 async function automateScrapes() {
   const cities = ['ATX', 'SFO', 'NYC'];
+  // const cities = ['ATX'];
+  // const cities = ['SFO'];
+  // const cities = ['NYC'];
   return Promise.all(cities.map(async city => getScrapedArtists(city)));
 }
 
@@ -41,7 +44,7 @@ async function updateArtistsAndPlaylists() {
     .then(() => {
       const end = new Date();
       console.log(end);
-      console.log('Update finished. Time elapsed:', (end.getTime() - start.getTime()) / 1000);
+      console.log('Update finished. Time elapsed:', ((end.getTime() - start.getTime()) / 1000), 'seconds.');
     });
 }
 
@@ -55,7 +58,7 @@ new cron.CronJob('00 00 00 * * *',
   'Europe/London');
 
 // run the update adhoc
-// updateArtistsAndPlaylists();
+updateArtistsAndPlaylists();
 
 module.exports = function (app) {
   app.get('*', (req, res) => {
