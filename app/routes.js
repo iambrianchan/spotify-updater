@@ -28,6 +28,9 @@ async function getScrapedArtists(location) {
 // return all city data scrapped
 async function automateScrapes() {
   const cities = ['ATX', 'SFO', 'NYC'];
+  // const cities = ['ATX'];
+  // const cities = ['SFO'];
+  // const cities = ['NYC'];
   return Promise.all(cities.map(async city => getScrapedArtists(city)));
 }
 

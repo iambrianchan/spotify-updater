@@ -12,6 +12,7 @@ const spotifyApi = new SpotifyWebApi({
 spotifyApi.setAccessToken(process.env.SPOTIFY_ACCESS_TOKEN);
 spotifyApi.setRefreshToken(process.env.SPOTIFY_REFRESH_TOKEN);
 
+
 const defaultDelay = 500;
 const spot = {};
 
@@ -157,7 +158,7 @@ spot.transformCity = async function transformCity(city, currentPlaylists, curren
 // Iterate over all of the artists in a Venue
 spot.transformVenues = async function transformVenues(venue) {
   return new Promise((async (resolve, reject) => {
-    const artists = venue;
+    const artists = Array.from(new Set(venue));
     // Iterate over artist names, first searching for the artist by name in DB
     /* eslint-disable no-await-in-loop */
     for (const index of artists.keys()) {
