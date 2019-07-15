@@ -5,7 +5,7 @@ const Schema = mongoose.Schema;
 const ArtistSchema = new Schema({
   name: String,
   spotifyArtistId: String,
-  track: Object,
+  tracks: [],
   images: [],
   popularity: Number,
   genres: [],
