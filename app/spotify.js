@@ -12,7 +12,7 @@ const spotifyApi = new SpotifyWebApi({
 spotifyApi.setAccessToken(process.env.SPOTIFY_ACCESS_TOKEN);
 spotifyApi.setRefreshToken(process.env.SPOTIFY_REFRESH_TOKEN);
 
-const minimumNumberOfArtists = 5;
+
 const defaultDelay = 500;
 const spot = {};
 
@@ -136,12 +136,10 @@ spot.transformCity = async function transformCity(city, currentPlaylists, curren
         artists: newVenueArtists,
       };
 
-      if (spotifyPlaylistId === null && transformedVenue.artists.length > minimumNumberOfArtists) {
+      if (spotifyPlaylistId === null) {
         transformedVenue = await spot.createUserPlaylist(spotifyApi, currentUser, transformedVenue, city.name)
-      } else if (spotifyPlaylistId !== null && transformedVenue.artists.length > minimumNumberOfArtists) {
-        transformedVenue.spotifyPlaylistId = spotifyPlaylistId;
       } else {
-        continue;
+        transformedVenue.spotifyPlaylistId = spotifyPlaylistId;
       }
 
       await spot.replaceAllTracksInPlaylist(spotifyApi, currentUser, transformedVenue);
@@ -171,7 +169,7 @@ spot.transformVenues = async function transformVenues(venue) {
         const newArtist = await spot.searchArtist(artists[index]);
         if (newArtist != null) {
           const newTrack = await spot.searchTopTrack(newArtist.spotifyArtistId);
-          newArtist.track = newTrack;
+          newArtist.tracks = newTrack;
           if (newTrack != null) {
             await saveArtistInMongo(newArtist);
           }
@@ -183,7 +181,22 @@ spot.transformVenues = async function transformVenues(venue) {
     /* eslint-enable no-await-in-loop */
 
     // filter any null values
-    const filtered = artists.filter(artist => artist != null && artist.track != null);
+    const filtered = artists.filter(artist => artist != null && artist.tracks != null);
+    // make sure if an artist is playing a venue more than once, that unique tracks are selected
+    for (const index of filtered.keys()) {
+      let count = 0;
+      const name = filtered[index].name;
+      for (let i = 0; i < index; i+=1) {
+        if (filtered[i].name === name) {
+          count += 1;
+        }
+      }
+      if (count >= filtered[index].tracks.length) {
+        filtered[index].track = filtered[index].tracks[count % filtered[index].tracks.length];
+      } else {
+        filtered[index].track = filtered[index].tracks[count];
+      }
+    }
     resolve(filtered);
   }));
 };
@@ -191,23 +204,26 @@ spot.transformVenues = async function transformVenues(venue) {
 // Make a request for artist's Top Track using artistId
 spot.searchTopTrack = async function searchTopTrack(artistId) {
   return new Promise(((resolve, reject) => {
-    let topTrack = null;
+    let topTracks = null;
     spotifyApi.getArtistTopTracks(artistId, 'US') // Make the request using spotifyApi
       .then((response) => {
         const data = response.body;
         if (data.tracks.length > 0) {
-          const track = data.tracks[0];
-          topTrack = {
-            trackId: track.id,
-            trackUri: track.uri,
-            images: track.album.images,
-          };
+          topTracks = [];
+          for (const index of data.tracks.keys()) {
+            const track = data.tracks[index];
+            topTracks[index] = {
+              trackId: track.id,
+              trackUri: track.uri,
+              images: track.album.images,
+            };
+          }
         }
-        resolve(topTrack);
+        resolve(topTracks);
       })
       .catch((error) => {
         console.log('An error occurred using the spotify api to search for a track for artist', artistId, error);
-        reject(topTrack);
+        reject(topTracks);
       });
   }))
     .catch((error) => { console.log(error); });
@@ -306,7 +322,6 @@ spot.replaceAllTracksInPlaylist = async function(spotifyApi, userId, playlist) {
     if (tracks.length > 100) {
       tracks = tracks.slice(0, 100);
     }
-    // console.log(playlist, playlist.name);
     if (playlist.spotifyPlaylistId) {
       spotifyApi.replaceTracksInPlaylist(playlist.spotifyPlaylistId, tracks)
         .then(function(data) {
