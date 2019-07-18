@@ -7,7 +7,7 @@ const http = require('http');
 const scraper = {};
 
 // parse each NYC concert object
-function parseNycConcert(city, concert) {
+function parseOhMyRocknessConcert(city, concert) {
   const newCity = city;
   const venueName = concert.venue.name;
   const artists = concert.cached_bands.map(band => band.name);
@@ -24,29 +24,62 @@ function parseNycConcert(city, concert) {
 }
 
 // parse the NYC json, then call forEach to parse each concert object
-function parseNycJson(data) {
+function parseOhMyRocknessJson(cityName, data) {
+  let name;
+  switch(cityName) {
+    case 'CHI':
+      name = 'Chicago';
+      break;
+
+    case 'LAX':
+      name = 'Los Angeles';
+      break;
+
+    case 'NYC':
+      name = 'New York City';
+      region = 1;
+      break;
+  }
   const city = {
-    name: 'New York City',
+    name: name,
     venues: {},
   };
 
   const jsonData = JSON.parse(data);
 
   jsonData.forEach((item) => {
-    parseNycConcert(city, item);
+    parseOhMyRocknessConcert(city, item);
   });
 
   return city;
 }
 
 // get the NYC html
-async function getNycHtml() {
+async function getOhMyRocknessJson(cityName) {
+  let hostname, region;
+  switch(cityName) {
+    case 'CHI':
+      hostname = 'chicago.ohmyrockness.com';
+      region = 2;
+      break;
+
+    case 'LAX':
+      hostname = 'losangeles.ohmyrockness.com';
+      region = 3;
+      break;
+
+    case 'NYC':
+      hostname = 'www.ohmyrockness.com';
+      region = 1;
+      break;
+  }
+
   const header = {
     authorization: 'Token token="3b35f8a73dabd5f14b1cac167a14c1f6"',
   };
   const options = {
-    hostname: 'www.ohmyrockness.com',
-    path: '/api/shows.json?index=true&regioned=1',
+    hostname: hostname,
+    path: '/api/shows.json?index=true&regioned=' + region,
     port: 443,
     method: 'GET',
     headers: header,
@@ -306,9 +339,8 @@ scraper.main = async function scrapeCity(cityName) {
   if (cityName === 'SFO') {
     return scraper.runSfScrape();
   }
-
-  const html = await getNycHtml();
-  const data = parseNycJson(html);
+  const json = await getOhMyRocknessJson(cityName);
+  const data = parseOhMyRocknessJson(cityName, json);
   return data;
 };
 

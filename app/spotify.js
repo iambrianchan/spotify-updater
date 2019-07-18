@@ -13,7 +13,7 @@ spotifyApi.setAccessToken(process.env.SPOTIFY_ACCESS_TOKEN);
 spotifyApi.setRefreshToken(process.env.SPOTIFY_REFRESH_TOKEN);
 
 
-const defaultDelay = 500;
+const defaultDelay = 1000;
 const spot = {};
 
 // function for delaying

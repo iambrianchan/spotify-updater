@@ -15,9 +15,9 @@ async function getScrapedArtists(location) {
       } else if (location === 'SFO') {
         const sanfrancisco = await scraper.scraper.main('SFO');
         resolve(sanfrancisco);
-      } else if (location === 'NYC') {
-        const newyorkcity = await scraper.scraper.main('NYC');
-        resolve(newyorkcity);
+      } else if (['NYC', 'LAX', 'CHI'].includes(location)) {
+        const ohmyrockness = await scraper.scraper.main(location);
+        resolve(ohmyrockness);
       }
     } catch (error) {
       reject(Error('An error occurred'));
@@ -27,10 +27,7 @@ async function getScrapedArtists(location) {
 
 // return all city data scrapped
 async function automateScrapes() {
-  const cities = ['ATX', 'SFO', 'NYC'];
-  // const cities = ['ATX'];
-  // const cities = ['SFO'];
-  // const cities = ['NYC'];
+  const cities = ['ATX', 'SFO', 'NYC', 'LAX', 'CHI'];
   return Promise.all(cities.map(async city => getScrapedArtists(city)));
 }
 
