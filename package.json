@@ -14,7 +14,7 @@
     "express": "^4.17.1",
     "method-override": "^3.0.0",
     "mongoose": "^5.6.1",
-    "pug": "^2.0.4",
+    "pug": "^3.0.1",
     "spotify-web-api-node": "^4.0.0"
   },
   "devDependencies": {
